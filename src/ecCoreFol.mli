@@ -39,6 +39,8 @@ type binding  = (EcIdent.t * gty)
 type bindings = binding list
 type hoarecmp = FHle | FHeq | FHge
 
+type upmem = (Sm.t * Spv.t)
+
 type form = private {
   f_node : f_node;
   f_ty   : ty;
@@ -78,7 +80,7 @@ and f_node =
   | Fpr of pr (* hr *)
 
 and crmemory = form Mpv.t
-and upmemory = form * ((Sm.t * Spv.t) * form)
+and upmemory = form * (upmem * form)
 
 and eagerF = {
   eg_pr : form;
@@ -143,6 +145,7 @@ and pr = {
 }
 
 (* -------------------------------------------------------------------- *)
+val upmem_equal  : upmem -> upmem -> bool
 val f_equal   : form -> form -> bool
 val f_compare : form -> form -> int
 val f_hash    : form -> int

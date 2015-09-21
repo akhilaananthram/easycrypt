@@ -64,6 +64,8 @@ module EqTest = struct
     | _, Tglob mp when EcEnv.NormMp.tglob_reducible env mp ->
         for_type env t1 (EcEnv.NormMp.norm_tglob env mp)
 
+    | Tmem mt, Tmem mt' -> EcSymbols.Msym.equal (for_type env) mt mt'
+
     | Tconstr (p1, lt1), Tconstr (p2, lt2) when EcPath.p_equal p1 p2 ->
         if
              List.length lt1 = List.length lt2
@@ -364,7 +366,7 @@ let rec h_red ri env hyps f =
                   subst bds cargs)
               subst bds pargs in
 
-          let body = EcFol.form_of_expr EcFol.mhr body in
+          let body = EcFol.form_of_expr body in
           let body =
             EcFol.Fsubst.subst_tvar
               (EcTypes.Tvar.init (List.map fst op.EcDecl.op_tparams) tys) body in
@@ -485,6 +487,42 @@ and h_red_opt ri env hyps f =
   try Some (h_red ri env hyps f)
   with NotReducible -> None
 
+let norm_upmem env (gs,xs) = 
+  let do1 mp (gs',xs') = 
+    let use = NormMp.mod_use env mp in
+    let gs' = 
+      Sid.fold (fun a gs' -> Sm.add (EcPath.mident a) gs') use.us_gl gs' in
+    let xs' = 
+      Mx.fold (fun x _ xs' -> Spv.add (pv_glob x) xs') use.us_pv xs' in
+    gs', xs' in
+  let (gs',xs') = Sm.fold do1 gs (Sm.empty, Spv.empty) in    
+  let do1 pv xs' = Spv.add (NormMp.norm_pvar env pv) xs' in
+  let xs' = Spv.fold do1 xs xs' in
+  gs', xs'
+
+(* normalize only the variables not the associated formulaes *)
+let norm_crmem env cmem = 
+  Mpv.fold (fun pv f cmem' -> Mpv.add (NormMp.norm_pvar env pv) f cmem')
+    cmem Mpv.empty 
+
+let subst_upmem subst (gs,xs) =
+  let gs' = 
+    Sm.fold (fun mp gs' -> 
+      let mp' = EcPath.m_subst subst.fs_sty.ts_p subst.fs_mp mp in
+      Sm.add mp' gs') gs Sm.empty in
+  let xs' = 
+    Spv.fold (fun x xs' ->
+      let x' = pv_subst (EcPath.x_substm subst.fs_sty.ts_p subst.fs_mp) x in
+      Spv.add x' xs') xs Spv.empty in
+  gs', xs'
+  
+(* substitute and normalize only the variables not the associated formulaes *)
+let substnorm_crmem env subst cmem = 
+  Mpv.fold (fun x f cmem' ->
+    let x' = pv_subst (EcPath.x_substm subst.fs_sty.ts_p subst.fs_mp) x in
+    Mpv.add (NormMp.norm_pvar env x') f cmem') cmem Mpv.empty
+    
+
 let check_alpha_equal ri hyps f1 f2 =
   let env = LDecl.toenv hyps in
   let exn = IncompatibleForm (env, (f1, f2)) in
@@ -507,17 +545,6 @@ let check_alpha_equal ri hyps f1 f2 =
       List.fold_left2 add_local (env,subst) lid1 lid2
     | _, _ -> error() in
 
-  let check_memtype env mt1 mt2 =
-    match mt1, mt2 with
-    | None, None -> ()
-    | Some lmt1, Some lmt2 ->
-      let xp1, xp2 = EcMemory.lmt_xpath lmt1, EcMemory.lmt_xpath lmt2 in
-      ensure (EqTest.for_xp_norm env xp1 xp2);
-      let m1, m2 = EcMemory.lmt_bindings lmt1, EcMemory.lmt_bindings lmt2 in
-      ensure (EcSymbols.Msym.equal
-                (fun (p1,ty1) (p2,ty2) ->
-                  p1 = p2 && EqTest.for_type env ty1 ty2) m1 m2)
-    | _, _ -> error () in
   (* TODO all declaration in env, do it also in add local *)
   let check_binding (env, subst) (x1,gty1) (x2,gty2) =
     let gty2 = Fsubst.gty_subst subst gty2 in
@@ -532,11 +559,7 @@ let check_alpha_equal ri hyps f1 f2 =
       Mod.bind_local x1 p1 r1 env,
       if id_equal x1 x2 then subst
       else Fsubst.f_bind_mod subst x2 (EcPath.mident x1)
-    | GTmem   me1, GTmem me2  ->
-      check_memtype env me1 me2;
-      env,
-      if id_equal x1 x2 then subst
-      else Fsubst.f_bind_mem subst x2 x1
+
     | _, _ -> error () in
   let check_bindings env subst bd1 bd2 =
     List.fold_left2 check_binding (env,subst) bd1 bd2 in
@@ -545,9 +568,7 @@ let check_alpha_equal ri hyps f1 f2 =
     match (Mid.find_def f2 id2 subst.fs_loc).f_node with
     | Flocal id2 -> ensure (EcIdent.id_equal id1 id2)
     | _ -> assert false in
-  let check_mem subst m1 m2 =
-    let m2 = Mid.find_def m2 m2 subst.fs_mem in
-    ensure (EcIdent.id_equal m1 m2) in
+  
   let check_pv env subst pv1 pv2 =
     let pv2 = pv_subst (EcPath.x_substm subst.fs_sty.ts_p subst.fs_mp) pv2 in
     ensure (EqTest.for_pv_norm env pv1 pv2) in
@@ -557,6 +578,12 @@ let check_alpha_equal ri hyps f1 f2 =
   let check_xp env subst xp1 xp2 =
     let xp2 = EcPath.x_substm subst.fs_sty.ts_p subst.fs_mp xp2 in
     ensure (EqTest.for_xp_norm env xp1 xp2) in
+  
+  let check_upmem env subst up1 up2  = 
+    let up1 = norm_upmem env up1 in
+    let up2  = subst_upmem subst up2 in
+    let up2 = norm_upmem env up2 in
+    upmem_equal up1 up2 in
 
   let check_s env s s1 s2 =
     let es = e_subst_init s.fs_freshen s.fs_sty.ts_p s.fs_ty Mp.empty s.fs_mp in
@@ -585,12 +612,12 @@ let check_alpha_equal ri hyps f1 f2 =
     | Flocal id1, Flocal id2 -> check_local subst id1 f2 id2
 
     | Fpvar(p1,m1), Fpvar(p2,m2) ->
-      check_mem subst m1 m2;
+      aux env subst m1 m2;
       check_pv env subst p1 p2
 
     | Fglob(p1,m1), Fglob(p2,m2) ->
-      check_mem subst m1 m2;
-      check_mp env subst p1 p2
+      aux env subst m1 m2;
+      check_mp env subst p1 p2    
 
     | Fop(p1, ty1), Fop(p2, ty2) when EcPath.p_equal p1 p2 ->
       List.iter2 (check_ty env subst) ty1 ty2
@@ -654,10 +681,20 @@ let check_alpha_equal ri hyps f1 f2 =
       check_s env subst eg1.eg_sr eg2.eg_sr
 
     | Fpr pr1, Fpr pr2 ->
-      check_mem subst pr1.pr_mem pr2.pr_mem;
+      aux env subst pr1.pr_mem pr2.pr_mem;
       check_xp env subst pr1.pr_fun pr2.pr_fun;
       aux env subst pr1.pr_args pr2.pr_args;
       aux env subst pr1.pr_event pr2.pr_event
+
+    | Fcrmem m1, Fcrmem m2 ->
+      let m2 = substnorm_crmem env subst m2 in
+      if Mpv.equal (fun m1 m2 -> aux env subst m1 m2;true) m1 m2 then ()
+      else error()
+
+    | Fupmem (m1,(xs1,m1')), Fupmem (m2,(xs2,m2')) ->
+      aux env subst m1 m2;
+      aux env subst m1' m2';
+      ensure (check_upmem env subst xs1 xs2)
 
     | _, _ -> error ()
 

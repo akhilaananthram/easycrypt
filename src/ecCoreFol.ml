@@ -42,6 +42,8 @@ let mright = EcIdent.create "&2"
 
 type hoarecmp = FHle | FHeq | FHge
 
+type upmem = (Sm.t * Spv.t)
+
 type form = {
   f_node : f_node;
   f_ty   : ty;
@@ -81,7 +83,7 @@ and f_node =
   | Fpr of pr (* hr *)
 
 and crmemory = form Mpv.t
-and upmemory = form * ((Sm.t * Spv.t) * form)
+and upmemory = form * (upmem * form)
 
 and eagerF = {
   eg_pr : form;
@@ -271,9 +273,11 @@ let pr_equal pr1 pr2 =
 let cr_equal cr1 cr2 = 
   Mpv.equal f_equal cr1 cr2
 
-let up_equal (m11,((sg1,spv1),m12)) (m21,((sg2,spv2),m22)) =
-  f_equal m11 m21 && f_equal m12 m22 &&
-    Sm.equal sg1 sg2 && Spv.equal spv1 spv2
+let upmem_equal (sg1,spv1) (sg2,spv2) = 
+  Sm.equal sg1 sg2 && Spv.equal spv1 spv2
+
+let up_equal (m11,(up1,m12)) (m21,(up2,m22)) =
+  f_equal m11 m21 && f_equal m12 m22 && upmem_equal up1 up2
   
 (* -------------------------------------------------------------------- *)
 let hf_hash hf =

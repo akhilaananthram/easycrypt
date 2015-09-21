@@ -1471,20 +1471,22 @@ and pp_form_core_r (ppe : PPEnv.t) outer fmt f =
 
   | Fpvar (x, i) -> begin
     match EcEnv.Memory.get_active ppe.PPEnv.ppe_env with
-    | Some i' when is_local_id  i i' ->
+    | Some i' when is_local_id i i' ->
         Format.fprintf fmt "%a" (pp_pv ppe) x
     | _ ->
-        let ppe = PPEnv.enter_by_memid ppe i in
-        Format.fprintf fmt "%a{%a}" (pp_pv ppe) x (pp_mem ppe) i
+      (* OPMEM: FIXME 
+        let ppe = PPEnv.enter_by_memid ppe i in *)
+        Format.fprintf fmt "%a{%a}" (pp_pv ppe) x (pp_form ppe) i
     end
 
   | Fglob (mp, i) -> begin
     match EcEnv.Memory.get_active ppe.PPEnv.ppe_env with
-    | Some i' when EcMemory.mem_equal i i' ->
+    | Some i' when is_local_id i i' ->
         Format.fprintf fmt "(glob %a)" (pp_topmod ppe) mp
     | _ ->
-        let ppe = PPEnv.enter_by_memid ppe i in
-        Format.fprintf fmt "(glob %a){%a}" (pp_topmod ppe) mp (pp_mem ppe) i
+      (* OPMEM: FIXME 
+        let ppe = PPEnv.enter_by_memid ppe i in *)
+        Format.fprintf fmt "(glob %a){%a}" (pp_topmod ppe) mp (pp_form ppe) i
     end
 
   | Fquant (q, bd, f) ->
@@ -1612,8 +1614,12 @@ and pp_form_core_r (ppe : PPEnv.t) outer fmt f =
              (fun fmt -> pp_string fmt "()")
          | _ ->
              (fun fmt -> Format.fprintf fmt "(%a)" (pp_form ppe) pr.pr_args))
-        (pp_local ppe) pr.pr_mem
+        (pp_form ppe) pr.pr_mem
         (pp_form ppe) pr.pr_event
+
+  (* OPMEM: FIXME *)
+  | Fcrmem _ -> Format.fprintf fmt "concrete_memory"
+  | Fupmem _ -> Format.fprintf fmt "update_memory"
 
 and pp_form_r (ppe : PPEnv.t) outer fmt f =
   let printers =

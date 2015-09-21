@@ -377,9 +377,9 @@ let f_match_core opts hyps (ue, ev) ~ptn subject =
       | Fpvar (pv1, m1), Fpvar (pv2, m2) ->
           let pv1 = EcEnv.NormMp.norm_pvar env pv1 in
           let pv2 = EcEnv.NormMp.norm_pvar env pv2 in
-            if not (EcTypes.pv_equal pv1 pv2) then
-              failure ();
-            doit_mem env mxs m1 m2
+          if not (EcTypes.pv_equal pv1 pv2) then
+            failure ();
+          doit env (subst,mxs) m1 m2
 
       | Fif (c1, t1, e1), Fif (c2, t2, e2) ->
           List.iter2 (doit env ilc) [c1; t1; e1] [c2; t2; e2]
@@ -390,9 +390,9 @@ let f_match_core opts hyps (ue, ev) ~ptn subject =
       | Fglob (mp1, me1), Fglob (mp2, me2) ->
           let mp1 = EcEnv.NormMp.norm_mpath env mp1 in
           let mp2 = EcEnv.NormMp.norm_mpath env mp2 in
-            if not (EcPath.m_equal mp1 mp2) then
-              failure ();
-            doit_mem env mxs me1 me2
+          if not (EcPath.m_equal mp1 mp2) then
+            failure ();
+          doit env (subst,mxs) me1 me2
 
       | Ftuple fs1, Ftuple fs2 ->
           if List.length fs1 <> List.length fs2 then
@@ -486,34 +486,6 @@ let f_match_core opts hyps (ue, ev) ~ptn subject =
             and env = EcEnv.Var.bind_local x1 ty1 env in
 
             (env, subst)
-
-        | GTmem None, GTmem None ->
-            (env, subst)
-
-        | GTmem (Some m1), GTmem (Some m2) ->
-            let xp1 = EcMemory.lmt_xpath m1 in
-            let xp2 = EcMemory.lmt_xpath m2 in
-            let m1  = EcMemory.lmt_bindings m1 in
-            let m2  = EcMemory.lmt_bindings m2 in
-
-            if not (EcPath.x_equal xp1 xp2) then
-              raise MatchFailure;
-            if not (
-              try
-                EcSymbols.Msym.equal
-                  (fun (p1,ty1) (p2,ty2) ->
-                    if p1 <> p2 then raise MatchFailure;
-                    EcUnify.unify env ue ty1 ty2; true)
-                  m1 m2
-              with EcUnify.UnificationFailure _ -> raise MatchFailure)
-            then
-              raise MatchFailure;
-
-            let subst =
-              if   id_equal x1 x2
-              then subst
-              else Fsubst.f_bind_mem subst x2 x1
-            in (env, subst)
 
         | GTmodty (p1, r1), GTmodty (p2, r2) ->
             if not (ModTy.mod_type_equiv env p1 p2) then
@@ -647,6 +619,7 @@ module FPosition = struct
               doit pos (`WithCtxt (ctxt, [f]))
 
           | Fpr pr ->
+               
               let subctxt = Sid.add pr.pr_mem ctxt in
               doit pos (`WithSubCtxt [(ctxt, pr.pr_args); (subctxt, pr.pr_event)])
 
