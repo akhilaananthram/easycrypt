@@ -1,16 +1,29 @@
 (* -------------------------------------------------------------------- *)
-require import Option Int List Real NewDistr FSet NewFMap.
-require import IntExtra IntDiv RealExtra Mu_mem StdRing StdOrder StdBigop.
+(*
+  src: Bigint, Ring, Field, StdOrder
+  theories/algebra: StdRing, StdOrder, StdBigop, IntDiv
+  theories/core: FMap
+  theories/datatypes: Int, IntExtra, List, Real, RealExtra, FSet
+  theories/distributions: Mu_mem, Distr
+  location unknown: RField, IntOrder, RealOrder, BIA
+*)
+require import Int IntExtra IntDiv List Real RealExtra Distr FSet FMap.
+require import Mu_mem StdRing StdOrder StdBigop.
 (*---*) import Bigint Ring.IntID RField IntOrder RealOrder BIA.
 
 (** Our PRG uses a type for internal seeds and a type for its actual
   * output. *)
 type seed.
 
+(* Lossless and subuniform *)
 op dseed: { seed distr | is_uniform_over dseed predT } as dseed_uf_fu.
 
+(* smt = satisfiability modulo theories *)
+(* Total probability is 1 *)
 lemma dseed_ll:  is_lossless dseed by smt w=dseed_uf_fu.
+(* Everything with positive probability has the same probability *)
 lemma dseed_suf: is_subuniform dseed by smt w=dseed_uf_fu.
+(* Everything has positive probability in the domain. Nothing has zero *)
 lemma dseed_fu:  is_full dseed by smt w=dseed_uf_fu.
 
 op pr_dseed = mu_x dseed witness.
@@ -38,8 +51,8 @@ module type PRG = {
   *   - the PRG at most qP times, and
   *   - the PRF at most qF times, and
   *   - return a boolean *)
-op qP : { int | 0 <= qP } as ge0_qP.
-op qF : { int | 0 <= qF } as ge0_qF.
+op qP : { int | 0 <= qP } as leq0_qP.
+op qF : { int | 0 <= qF } as leq0_qF.
 
 module type APRF = {
   proc f(x:seed): seed * output
@@ -85,10 +98,10 @@ module PrgI = {
 
 (* We use the following PRF *)
 module F = {
-  var m:(seed,seed * output) fmap
+  var m:(seed,seed * output) map
 
   proc init(): unit = {
-     m = map0;
+     m = FMap.empty;
   }
 
   proc f (x:seed) : seed * output = {
@@ -104,7 +117,7 @@ module F = {
 }.
 
 lemma FfL: islossless F.f.
-proof. by proc; wp; do!rnd predT; skip; smt w=(dseed_uf_fu dout_ll). qed.
+proof. by proc; wp; do!rnd predT; skip; smt. qed.
 
 
 (* And we are proving the security of the following PRG *)
@@ -151,7 +164,7 @@ module Psample = {
 }.
 
 lemma PsampleprgL: islossless Psample.prg.
-proof. by proc; wp; do 2!rnd predT; skip; smt w=(dseed_uf_fu dout_ll). qed.
+proof. by proc; wp; do 2!rnd predT; skip; smt. qed.
 
 (* -------------------------------------------------------------------- *)
 (* In preparation of the eager/lazy reasoning step                      *)
@@ -227,16 +240,16 @@ section.
    *  - there is a cycle in the state, OR
    *  - an adversary query collides with an internal seed. *)
 
-  pred Bad logP (m:('a,'b) fmap) =
+  pred Bad logP (m:('a,'b) map) =
     !uniq logP \/ exists r, mem logP r /\ mem (dom m) r.
 
-  lemma notBad logP (m:('a,'b) fmap):
+  lemma notBad logP (m:('a,'b) map):
     !Bad logP m <=>
       (uniq logP /\ forall r, !mem logP r \/ !mem (dom m) r)
-  by smt ml=0.
+  by smt.
 
   (* In this game, we replace the PRF with fresh samples *)
-  pred inv (m1 m2:('a,'b) fmap) (logP:'a list) =
+  pred inv (m1 m2:('a,'b) map) (logP:'a list) =
     (forall r, mem (dom m1) r <=> (mem (dom m2) r \/ mem logP r)) /\
     (forall r, mem (dom m2) r => m1.[r] = m2.[r]).
 
@@ -246,53 +259,42 @@ section.
       Pr[Exp(A,F,Psample).main() @ &m: Bad P.logP F.m].
   proof.
   apply (ler_trans (Pr[Exp(A,F,Psample).main() @ &m: res \/ Bad P.logP F.m]));
-    last by rewrite Pr [mu_or]; smt w=mu_bounded.
-  byequiv (_: ={glob A} ==> !(Bad P.logP F.m){2} => ={res})=> // [|/#].
+    last by rewrite Pr [mu_or]; smt.
+  byequiv (_: ={glob A} ==> !(Bad P.logP F.m){2} => ={res})=> //; last smt.
   proc.
   call (_: Bad P.logP F.m, ={P.seed} /\ inv F.m{1} F.m{2} P.logP{2}).
     (* adversary is lossless *)
     by apply AaL.
     (* [F.f ~ F.f: I] when Bad does not hold *)
-    proc; wp; do !rnd; wp; skip=> /> &1 &2 not_bad m_is_mUlog m2_le_m1 r1L _ r2L _.
-    case: (mem (dom F.m{2}) x{2})=> [/#|//=].
-    case: (mem (dom F.m{1}) x{2})=> /=.
-      rewrite notBad=> /m_is_mUlog + x_notin_m2 [] _ h'; rewrite x_notin_m2 /=.
-      by move: (h' x{2}); rewrite dom_set !inE.
-    rewrite !getP /= !dom_set=> x_notin_m1 x_notin_m2 _; split.
-      by move=> r; rewrite !inE m_is_mUlog /#.
-    by move=> r; rewrite !inE !getP=> -[/m2_le_m1|] ->.
+    proc; wp; do !rnd; wp; skip; rewrite /Top.inv; progress; expect 13 smt.
     (* F.f is lossless when Bad holds *)
     by move=> _ _; apply FfL.
     (* F.f preserves bad *)
     move=> _ //=; proc.
     case (mem (dom F.m) x).
-      by rcondf 3; auto=> />; rewrite dseed_ll dout_ll.
+      by rcondf 3; wp; do !rnd=> //; wp; skip; smt.
     rcondt 3; first by do !rnd; wp.
-    auto=> />; rewrite dseed_ll dout_ll //= => &hr bad_init x_notin_m v _ v0 _.
-    elim bad_init=> [_|[] r [] r_in_log r_in_m]; first by left.
-    by right; exists r; rewrite dom_set !inE r_in_log r_in_m.
+    auto; progress. smt. smt.
+    elim H=> H; [by left | right].
+    elim H=> r [r_in_logP r_in_m].
+    by exists r; split=> //; rewrite dom_set in_fsetU; left.
     (* [Psample.prg ~ Plog.prg: I] when Bad does not hold *)
     proc; inline F.f. swap{2} 3 -2.
-    auto=> /> &1 &2 _ m1_is_m2Ulog m2_le_m1 r1 _ r2 _.
-    case: (mem (dom F.m{1}) P.seed{2})=> [/#|//=].
-    rewrite !getP dom_set /= oget_some //=.
-    move=> seed_notin_m1 _; split.
-      by move=> r; rewrite !inE m1_is_m2Ulog /#.
-    move=> r ^/m2_le_m1; rewrite !getP=> -> r_in_m2.
-    by move: (iffRL _ _ (m1_is_m2Ulog r)); rewrite r_in_m2 /#.
+    wp; do 2!rnd; wp; skip; progress; first 2 last; last 9 smt.
+    by move: H6; rewrite notBad=> -[logP_unique contradiction]; smt.
     (* Plog.prg is lossless when Bad holds *)
-    by move=> _ _; proc; inline F.f; auto=> />; rewrite dseed_ll dout_ll.
+    by move=> _ _; proc; inline F.f;
+       wp; do 2!rnd predT; wp;
+       skip; smt.
     (* Psample.prg preserves bad *)
-    move=> _ //=; proc; auto=> />; rewrite dseed_ll dout_ll /=.
-    move=> &hr bad_init v1 _ v2 _.
-    elim: bad_init=> [h|[] r [] r_in_log r_in_m].
-      by left; rewrite /= h.
-    by right; exists r; rewrite /= r_in_log r_in_m.
+    move=> _ //=; proc.
+    wp; do 2!rnd; wp.
+    by skip; rewrite /Bad; progress; smt.
   (* Returning to main *)
   call (_: ={glob F} ==> ={glob P} /\ inv F.m{1} F.m{2} P.logP{2});
-    first by proc; auto.
+    first by proc; wp; rnd; skip; smt.
   call (_: true ==> ={glob F}); first by sim.
-  by auto=> /#.
+  by skip; smt.
   qed.
 
   local lemma Psample_PrgI &m:
@@ -303,17 +305,17 @@ section.
     (* F.f *)
     by sim.
     (* Psample.prg ~ PrgI.prg *)
-    by proc; wp; rnd; rnd{1}; auto=> />; rewrite dseed_ll.
+    by proc; wp; rnd; rnd{1}; wp; skip; smt.
   conseq (_: _ ==> ={glob A, glob F})=> //.
-  by inline *; auto=> />; rewrite dseed_ll.
+  by inline *; auto; smt.
   qed.
 
   local lemma Resample_resampleL: islossless Resample.resample.
   proof.
   proc.
   while (true) (n - size P.logP);
-    first by move=> z; auto; rewrite dseed_ll /#.
-  by auto; rewrite dseed_ll /#.
+    first by move=> z; wp; rnd predT; skip; smt.
+  by rnd predT; wp; skip; smt.
   qed.
 
   local module Exp'A = Exp'(A).
@@ -332,7 +334,7 @@ section.
     sim; inline Resample.resample Psample.init F.init.
     rcondf{2} 7;
       first by move=> _; rnd; wp; conseq [-frame] (_: _ ==> true) => //.
-    by wp; rnd; wp; rnd{2} predT; auto; rewrite dseed_ll.
+    by wp; rnd; wp; rnd{2} (True); wp; skip; smt.
     (* presampling ~ postsampling *)
     seq 2 2: (={glob A, glob F, glob Plog}); first by sim.
     eager (H: Resample.resample(); ~ Resample.resample();
@@ -350,10 +352,10 @@ section.
       conseq (_ : _ ==> ={P.logP})=> //.
       seq 3 5: (={P.logP} /\ (size P.logP = n - 1){2}).
         while (={P.logP} /\ n{2} = n{1} + 1 /\ size P.logP{1} <= n{1});
-          first by auto=> /#.
-        by wp; rnd{2}; auto=> />; rewrite dseed_ll; smt w=size_ge0.
-      rcondt{2} 1; first by move=> _; auto=> /#.
-      rcondf{2} 3; first by move=> _; auto=> /#.
+          first by wp; rnd; skip; progress; smt.
+        by wp; rnd{2}; skip; progress=> //; smt.
+      rcondt{2} 1; first by move=> _; skip; smt.
+      rcondf{2} 3; first by move=> _; wp; rnd; skip; smt.
       by sim.
       by sim.
   qed.
@@ -464,16 +466,14 @@ section.
       (* f *)
       proc; sp; if=> //.
       call (_: card (dom F.m) < C.cF ==> card (dom F.m) <= C.cF).
-        proc; auto=> /> &hr h r1 _ r2 _.
-        by rewrite dom_set fcardU fcard1; smt w=fcard_ge0.
-      by auto=> /#.
+        by proc; wp; do !rnd; skip; smt.
+      by wp; skip; smt.
       (* prg *)
       proc; sp; if=> //.
       call (_: size P.logP = C.cP - 1 ==> size P.logP = C.cP).
-        by proc; auto=> /#.
-      by auto=> /#.
-    inline *; auto=> />. search qP.
-    by rewrite dom0 fcards0 /=; smt w=(ge0_qP ge0_qF).
+        by proc; wp; do !rnd; skip; smt.
+      by wp; skip; smt.
+    by inline Psample.init F.init; wp; rnd; wp; skip; smt.
   inline Resample.resample.
   exists* P.logP; elim* => logP.
   seq 3: true
@@ -485,11 +485,11 @@ section.
   conseq [-frame] (_ : _ : <= (if Bad P.logP F.m then 1%r else
       (sumid (qF + size P.logP) (qF + n))%r * pr_dseed)).
   + progress; have ->/=: Bad [] F.m{hr} = false by smt ml=0.
-    apply/ler_wpmul2r; first by smt w=mu_bounded. apply/le_fromint.
+    apply/ler_wpmul2r; first by smt. apply/le_fromint.
     rewrite -{1}(add0z qF) big_addn /= /predT -/predT.
     rewrite (addzC qF) !addrK big_split big_constz.
     rewrite count_predT size_range /= max_ler ?size_ge0 addrC.
-    rewrite ler_add 1:mulrC ?ler_wpmul2r // ?ge0_qF.
+    rewrite ler_add 1:mulrC ?ler_wpmul2r // ?leq0_qF.
     rewrite sumidE ?size_ge0 leq_div2r // mulrC.
     move: (size_ge0 logP) H => /IntOrder.ler_eqVlt [<- /#|gt0_sz le].
     by apply/IntOrder.ler_pmul => // /#.
@@ -515,7 +515,7 @@ section.
           apply mu_mem_le=> x _.
             by rewrite (dseed_suf x witness) 3:/pr_dseed // dseed_fu.
             by apply/ler_wpmul2r; [smt w=mu_bounded|exact/le_fromint].
-          by pose p := mem P.logP{hr}; apply mu_mem_le_size; smt w=dseed_uf_fu.
+          pose p := mem P.logP{hr}; apply mu_mem_le_size; smt.
         conseq [-frame] Hw; progress=> //.
         by rewrite H1 /= (Ring.IntID.addrC 1) lerr.
       progress=> //; rewrite H2 /= -mulrDl addrA -fromintD.
@@ -536,6 +536,6 @@ section.
   have: Pr[Exp'(C(A)).main() @ &m: Bad P.logP F.m]
        <= (qP * qF + (qP - 1) * qP%/2)%r * pr_dseed
     by byphoare Bad_bound.
-  smt ml=0.
+  smt.
   qed.
 end section.
