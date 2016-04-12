@@ -15,7 +15,8 @@ require import Mu_mem StdRing StdOrder StdBigop.
   * output. *)
 type seed.
 
-(* Lossless and subuniform *)
+(* Defines a distribution: Lossless and subuniform *)
+(* predT (a -> bool): (_ : 'a) = true *)
 op dseed: { seed distr | is_uniform_over dseed predT } as dseed_uf_fu.
 
 (* smt = satisfiability modulo theories *)
@@ -31,6 +32,7 @@ op pr_dseed = mu_x dseed witness.
 (* -------------------------------------------------------------------- *)
 type output.
 
+(* Defines a distribution: Lossless *)
 op dout: { output distr | is_lossless dout } as dout_ll.
 
 (** We use a PRF that, on input a seed, produces a seed and an output... *)
@@ -54,14 +56,17 @@ module type PRG = {
 op qP : { int | 0 <= qP } as leq0_qP.
 op qF : { int | 0 <= qF } as leq0_qF.
 
+(* Hides the existence of the init oracle from the adversary *)
 module type APRF = {
   proc f(x:seed): seed * output
 }.
 
+(* Hides the existence of the init oracle from the adversary *)
 module type APRG = {
   proc prg(): output
 }.
 
+(* Takes in abstracted versions to hide init oracle *)
 module type Adv (F:APRF,P:APRG) = {
   proc a(): bool {F.f P.prg} (* Fixing the order of oracles for stability *)
 }.
@@ -117,6 +122,15 @@ module F = {
 }.
 
 lemma FfL: islossless F.f.
+(* TACTICS *)
+(* wp - weakest precondition. apply the assignment rule as much as possible *)
+(* rnd f f−1 − two side rule (f and f^−1 are optional). for every element in the support of the domain of f, if v is selected randomly, then f(v) is random *)
+(* skip - P --> Q ==> {P} epsilon ~ epsilon {Q}: epsilon is the same for P and Q *)
+(* smt - try to solve the goal calling external SMT solvers *)
+(* TACTICAL OPERATORS *)
+(* by t1; ...; tn - apply t1; ...; tn and then try to close all the subgoals *)
+(* do t - repeat t as much as possible, at least one time *)
+(* t1;t2 - apply t1 and then t2 on all generated subgoals *)
 proof. by proc; wp; do!rnd predT; skip; smt. qed.
 
 
@@ -140,7 +154,7 @@ module P (F:PRF) = {
 (* -------------------------------------------------------------------- *)
 
 (* We use the following oracle in an intermediate game that links two
-   sections. Ideally, we would hide it somehwere, but nested sections
+   sections. Ideally, we would hide it somewhere, but nested sections
    don't work yet. *)
 
 (* Note that it uses P's state (in which we have a useless thing) to
