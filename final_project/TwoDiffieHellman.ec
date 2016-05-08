@@ -42,7 +42,7 @@ theory TwoDDH.
 
 end TwoDDH.
 
-module DDHAdv(A:Adversary) = {
+module DDHAdv(A:TwoDDH.Adversary) = {
   proc guess (gr, gx, gz) : bool = {
     (* gz = g^(rx) or g^r1 *)
     var y, b';
@@ -52,104 +52,72 @@ module DDHAdv(A:Adversary) = {
   }
 }.
 
-(** Set version of the Computational Diffie-Hellman problem **)
-theory Set_CDH.
 
-  const n: int.
+section.
 
-  module type Adversary = {
-    proc solve(gx:group, gy:group): group fset
-  }.
+  declare module A:TwoDDH.Adversary.
 
-  module SCDH (B:Adversary) = {
-    proc main(): bool = {
-      var x, y, s;
+  local lemma cpa_twoddh0 &m:
+      Pr[DDH0(DDHAdv(A)).main() @ &m : res] =
+      Pr[DDH1(DDHAdv(A)).main() @ &m : res].
+  proof.
+    (* byequiv - used to move between equivalence of probability of two games to equivalence of two games *)
+    (* // - discharge trivial goals; try done *)
+    (* swap{A} i j - gets the games to be in sync; move line i in game A by j *)
+    (* call(invariant) - expands post condition with the invariant *)
+    byequiv => //;proc;inline *.
+    swap{1} 7 -5.
+    auto;call (_:true);auto;call (_:true);auto;progress;smt.
+  qed.
 
-      x = $FDistr.dt;
-      y = $FDistr.dt;
-      s = B.solve(g ^ x, g ^ y);
-      return (mem s (g ^ (x * y)) /\ card s <= n);
+  local module Gb = {
+    proc main () : bool = {
+      var r, x, y, z1, z2, m0, m1, b, b';
+      r  = $FDistr.dt;
+      x  = $FDistr.dt;
+      y  = $FDistr.dt;
+      (m0,m1) = A.choose(g^x);
+      z1  = $FDistr.dt;
+      z2 = $FDistr.dt;
+      b' = A.guess(gr, gz1, gz2);
+      b  = ${0,1};
+      return b' = b;
     }
   }.
 
-  module CDH_from_SCDH (A:Adversary): CDH.Adversary = {
-    proc solve(gx:group, gy:group): group = {
-      var s, x;
+  local lemma ddh1_gb &m:
+      Pr[TwoDDH1(TwoDDHAdv(A)).main() @ &m : res] =
+      Pr[Gb.main() @ &m : res].
+  proof.
+    byequiv => //;proc;inline *.
+    swap{1} 3 2;swap{1} [5..6] 2;swap{2} 6 -2.
+    auto;call (_:true);wp.
+    rnd (fun z, z + log(if b then m1 else m0){2})
+        (fun z, z - log(if b then m1 else m0){2}).
+    auto;call (_:true);auto;progress; (algebra || smt).
+  qed.
 
-      s = A.solve(gx, gy);
-      x = $Duni.dU s;
-      return x;
-    }
-  }.
+  (* need to assume adverary is lossless *)
+  axiom Ac_l : islossless A.choose.
+  axiom Ag_l : islossless A.guess.
 
-  (** Naive reduction to CDH **)
-  section.
-    declare module A: Adversary.
+  local lemma Gb_half &m:
+     Pr[Gb.main()@ &m : res] = 1%r/2%r.
+  proof.
+    byphoare => //;proc.
+    rnd  ((=) b')=> //=.
+    call Ag_l;auto;call Ac_l;auto;progress;smt.
+  qed.
 
-    local module SCDH' = {
-      var x, y: F.t
+  lemma conclusion &m :
+    `| Pr[CPA(TwoElGamal,A).main() @ &m : res] - 1%r/2%r | =
+    `| Pr[TwoDDH0(TwoDDHAdv(A)).main() @ &m : res] -
+         Pr[TwoDDH1(TwoDDHAdv(A)).main() @ &m : res] |.
+  proof.
+  (* rewrite - takes a lemma *)
+   by rewrite (cpa_ddh0 &m) (ddh1_gb &m) (Gb_half &m).
+  qed.
 
-      proc aux(): group fset = {
-        var s;
+end section.
 
-        x = $FDistr.dt;
-        y = $FDistr.dt;
-        s = A.solve(g ^ x, g ^ y);
-        return s;
-      }
-
-      proc main(): bool = {
-        var z, s;
-
-        s = aux();
-        z = $Duni.dU s;
-        return z = g ^ (x * y);
-      }
-    }.
-
-    lemma Reduction &m:
-      0 < n =>
-      1%r / n%r * Pr[SCDH(A).main() @ &m: res]
-      <= Pr[CDH.CDH(CDH_from_SCDH(A)).main() @ &m: res].
-    proof.
-      (* Move "0 < n" into the context *)
-      move=> n_pos.
-      (* We prove the inequality by transitivity:
-           1%r/n%r * Pr[SCDH(A).main() @ &m: res]
-           <= Pr[SCDH'.main() @ &m: res]
-           <= Pr[CDH.CDH(CDH_from_SCDH(A)).main() @ &m: res]. *)
-      (* "first last" allows us to first focus on the second inequality, which is easier. *)
-      apply (ler_trans Pr[SCDH'.main() @ &m: res]); first last.
-        (* Pr[SCDH'.main() @ &m: res] <= Pr[CDH.CDH(CDH_from_SCDH(A)).main() @ &m: res] *)
-        (* This is in fact an equality, which we prove by program equivalence *)
-        byequiv (_: _ ==> ={res})=> //=.
-        by proc; inline *; auto; call (_: true); auto.
-      (* 1%r/n%r * Pr[SCDH(A).main() @ &m: res] <= Pr[SCDH'.main() @ &m: res] *)
-      (* We do this one using a combination of phoare (to deal with the final sampling of z)
-         and equiv (to show that SCDH'.aux and CDH.CDH are equivalent in context). *)
-      byphoare (_: (glob A) = (glob A){m} ==> _)=> //.
-      (* This line is due to a bug in proc *) pose d:= 1%r/n%r * Pr[SCDH(A).main() @ &m: res].
-      pose p:= Pr[SCDH(A).main() @ &m: res]. (* notation for ease of writing below *)
-      proc.
-      (* We split the probability computation into:
-           - the probability that s contains g^(x*y) and that |s| <= n is Pr[SCDH(A).main() @ &m: res], and
-           - when s contains g^(x*y), the probability of sampling that one element uniformly in s is bounded
-             by 1/n. *)
-      seq  1: (mem s (g ^ (SCDH'.x * SCDH'.y)) /\ card s <= n) p (1%r/n%r) _ 0%r => //.
-        (* The first part is dealt with by equivalence with SCDH. *)
-        conseq (_: _: =p). (* strengthening >= into = for simplicity*)
-          call (_: (glob A) = (glob A){m}  ==> mem res (g^(SCDH'.x * SCDH'.y)) /\ card res <= n)=> //.
-            bypr; progress; rewrite /p.
-            byequiv (_: )=> //.
-            by proc *; inline *; wp; call (_: true); auto.
-      (* The second part is just arithmetic, but smt needs some help. *)
-      rnd (Pred.pred1 (g^(SCDH'.x * SCDH'.y))).
-      skip; progress.
-        rewrite Duni.mu_dU filter_pred1 H /= fcard1.
-        cut H1: 0 < card s{hr} by smt.
-        by rewrite mul1r lef_pinv /#.
-        smt.
-    qed.
-  end section.
-
-end Set_CDH.
+print conclusion.
