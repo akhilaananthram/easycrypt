@@ -6,10 +6,9 @@ require (*--*) DiffieHellman.
 
 
 (** Assumption: set DDH *)
+(* import DDH also imports CyclicGroup as G *)
 clone import DiffieHellman as DH.
 import DDH.
-
-clone export CyclicGroup as G.
 
 theory TwoDDH.
 
