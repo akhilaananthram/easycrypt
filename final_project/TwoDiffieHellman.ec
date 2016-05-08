@@ -43,12 +43,12 @@ theory TwoDDH.
 end TwoDDH.
 
 module DDHAdv(A:Adversary) = {
-  proc guess (gx, gy, gz) : bool = {
-    var r, z1, z2, b, b';
-    (m0, m1) = A.choose(gx);
-    b = ${0,1};
-    b' = A.guess(gy, gz * (b?m1:m0));
-    return b' = b;
+  proc guess (gr, gx, gz) : bool = {
+    (* gz = g^(rx) or g^r1 *)
+    var y, b';
+    y = $FDistr.dt;
+    b' = A.guess(gr, gx, g ^ y, gz, gr ^ y);
+    return b';
   }
 }.
 
