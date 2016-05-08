@@ -30,7 +30,7 @@ theory TwoDDH.
 
   module TwoDDH1 (A:Adversary) = {
     proc main() : bool = {
-      var b, r, x, y, z;
+      var b, r, x, y, z1, z2;
       r = $FDistr.dt;
       x = $FDistr.dt;
       y = $FDistr.dt;
