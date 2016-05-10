@@ -49,7 +49,13 @@ module ElGamal : Scheme = {
 (** Correctness of the scheme *)
 
 hoare Correctness: Correctness(ElGamal).main: true ==> res.
-proof. proc; inline*; auto; progress; algebra. qed.
+proof.
+proc.
+inline*.
+auto.
+progress.
+algebra.
+qed.
 
 (** Exact security *)
 
@@ -71,9 +77,17 @@ section Security.
       Pr[CPA(ElGamal,A).main() @ &m : res] =
       Pr[DDH0(DDHAdv(A)).main() @ &m : res].
   proof.
-    byequiv => //;proc;inline *.
+    byequiv => //.
+    proc.
+    inline *.
     swap{1} 7 -5.
-    auto;call (_:true);auto;call (_:true);auto;progress;smt.
+    auto.
+    call (_:true).
+    auto.
+    call (_:true).
+    auto.
+    progress.
+    smt.
   qed.
 
   local module Gb = {
@@ -117,7 +131,10 @@ section Security.
     `| Pr[DDH0(DDHAdv(A)).main() @ &m : res] -
          Pr[DDH1(DDHAdv(A)).main() @ &m : res] |.
   proof.
-   by rewrite (cpa_ddh0 &m) (ddh1_gb &m) (Gb_half &m).
+    rewrite (cpa_ddh0 &m).
+    rewrite (ddh1_gb &m).
+    rewrite (Gb_half &m).
+    done.
   qed.
 
 end section Security.
