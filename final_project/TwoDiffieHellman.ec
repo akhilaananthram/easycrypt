@@ -52,22 +52,43 @@ module DDHAdv(A:TwoDDH.Adversary) = {
   }
 }.
 
+module TwoDDH_Hybrid (A:TwoDDH.Adversary) = {
+  proc main() : bool = {
+    var b, r, x, y, z1, gr, gx, gz;
+    r = $FDistr.dt;
+    x = $FDistr.dt;
+    y = $FDistr.dt;
+    z1 = $FDistr.dt;
+    gr = g ^ r;
+    gx = g ^ x;
+    gz = g ^ z1;
+    b = A.guess(gr, gx, g ^ y, gz, gr ^ y);
+    return b;
+  }
+}.
+
 
 section.
 
   declare module A:TwoDDH.Adversary.
 
-  local lemma cpa_twoddh0 &m:
+  local lemma twoddh0_hybrid &m:
       Pr[DDH0(DDHAdv(A)).main() @ &m : res] =
-      Pr[DDH1(DDHAdv(A)).main() @ &m : res].
+      Pr[TwoDDH_Hybrid(A).main() @ &m : res].
   proof.
     (* byequiv - used to move between equivalence of probability of two games to equivalence of two games *)
     (* // - discharge trivial goals; try done *)
     (* swap{A} i j - gets the games to be in sync; move line i in game A by j *)
     (* call(invariant) - expands post condition with the invariant *)
-    byequiv => //;proc;inline *.
-    swap{1} 7 -5.
-    auto;call (_:true);auto;call (_:true);auto;progress;smt.
+    byequiv => //.
+    proc.
+    inline *.
+    swap{1} 6 -3.
+    auto.
+    call (_:true).
+    auto.
+    (*call (_:true);auto*)
+    progress;smt.
   qed.
 
   local module Gb = {
