@@ -52,29 +52,31 @@ module DDHAdv(A:TwoDDH.Adversary) = {
   }
 }.
 
-module TwoDDH_Hybrid (A:TwoDDH.Adversary) = {
-  proc main() : bool = {
-    var b, r, x, y, z1, gr, gx, gz;
-    r = $FDistr.dt;
-    x = $FDistr.dt;
-    y = $FDistr.dt;
-    z1 = $FDistr.dt;
-    gr = g ^ r;
-    gx = g ^ x;
-    gz = g ^ z1;
-    b = A.guess(gr, gx, g ^ y, gz, gr ^ y);
-    return b;
-  }
-}.
 
 
+(* UNCOMMENT WHEN READY TO PROVE
 section.
 
   declare module A:TwoDDH.Adversary.
 
+  module local TwoDDH_Hybrid = {
+    proc main() : bool = {
+      var b, r, x, y, z1, gr, gx, gz;
+      r = $FDistr.dt;
+      x = $FDistr.dt;
+      y = $FDistr.dt;
+      z1 = $FDistr.dt;
+      gr = g ^ r;
+      gx = g ^ x;
+      gz = g ^ z1;
+      b = A.guess(gr, gx, g ^ y, gz, gr ^ y);
+      return b;
+    }
+  }.
+
   local lemma twoddh0_hybrid &m:
       Pr[DDH0(DDHAdv(A)).main() @ &m : res] =
-      Pr[TwoDDH_Hybrid(A).main() @ &m : res].
+      Pr[TwoDDH_Hybrid.main() @ &m : res].
   proof.
     (* byequiv - used to move between equivalence of probability of two games to equivalence of two games *)
     (* // - discharge trivial goals; try done *)
@@ -90,55 +92,4 @@ section.
     (*call (_:true);auto*)
     progress;smt.
   qed.
-
-  local module Gb = {
-    proc main () : bool = {
-      var r, x, y, z1, z2, m0, m1, b, b';
-      r  = $FDistr.dt;
-      x  = $FDistr.dt;
-      y  = $FDistr.dt;
-      (m0,m1) = A.choose(g^x);
-      z1  = $FDistr.dt;
-      z2 = $FDistr.dt;
-      b' = A.guess(gr, gz1, gz2);
-      b  = ${0,1};
-      return b' = b;
-    }
-  }.
-
-  local lemma ddh1_gb &m:
-      Pr[TwoDDH1(TwoDDHAdv(A)).main() @ &m : res] =
-      Pr[Gb.main() @ &m : res].
-  proof.
-    byequiv => //;proc;inline *.
-    swap{1} 3 2;swap{1} [5..6] 2;swap{2} 6 -2.
-    auto;call (_:true);wp.
-    rnd (fun z, z + log(if b then m1 else m0){2})
-        (fun z, z - log(if b then m1 else m0){2}).
-    auto;call (_:true);auto;progress; (algebra || smt).
-  qed.
-
-  (* need to assume adverary is lossless *)
-  axiom Ac_l : islossless A.choose.
-  axiom Ag_l : islossless A.guess.
-
-  local lemma Gb_half &m:
-     Pr[Gb.main()@ &m : res] = 1%r/2%r.
-  proof.
-    byphoare => //;proc.
-    rnd  ((=) b')=> //=.
-    call Ag_l;auto;call Ac_l;auto;progress;smt.
-  qed.
-
-  lemma conclusion &m :
-    `| Pr[CPA(TwoElGamal,A).main() @ &m : res] - 1%r/2%r | =
-    `| Pr[TwoDDH0(TwoDDHAdv(A)).main() @ &m : res] -
-         Pr[TwoDDH1(TwoDDHAdv(A)).main() @ &m : res] |.
-  proof.
-  (* rewrite - takes a lemma *)
-   by rewrite (cpa_ddh0 &m) (ddh1_gb &m) (Gb_half &m).
-  qed.
-
-end section.
-
-print conclusion.
+*)
